@@ -1,0 +1,11 @@
+# Arduino-Build-Artefakte (rund 23 MB)
+# Achtung: Hier lag ursprünglich auch "Display Script.scpt" -- das ist kein
+# Build-Artefakt, sondern der Mac-Client. Er liegt jetzt in mac-client/.
+build/
+*.elf
+*.map
+*.bin
+*.hex
+
+# macOS
+.DS_Store
