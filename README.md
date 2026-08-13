@@ -4,7 +4,12 @@ Ein kleines rundes Display, das auf Zuruf eine URL als QR-Code zeigt — gedacht
 zum Abfotografieren mit dem Handy, ohne Tippen. Dazwischen zeigt es ein Logo.
 Die URL kommt entweder per USB-Kabel oder über HTTP aus dem Netz.
 
-![Logo-Vorschau](logo_preview.png)
+| Ruhezustand | URL empfangen |
+|---|---|
+| ![Logo](docs/display-logo.png) | ![QR-Code](docs/display-qr.png) |
+
+*Simulationen des Displayinhalts, gerendert aus den Maßen im Sketch — keine
+Fotos.*
 
 ## Hardware
 
@@ -151,6 +156,26 @@ nicht sichtbar.
    QR-Code. Die QR-Version wird nach Länge gewählt — Version 4 bis 70 Zeichen,
    darüber Version 9. Sehr lange URLs (> ~200 Zeichen) passen nicht mehr.
 5. Nach 30 Sekunden wieder das Logo.
+
+### Warum die Maße so knapp sind
+
+![Framebuffer gegen sichtbaren Bereich](docs/geometrie.png)
+
+Der Sketch zeichnet in einen quadratischen Framebuffer, sichtbar ist aber nur
+der Inkreis mit Radius 120. Nachgerechnet für Version 4 (33 Module, Skalierung
+180 ÷ 33 = 5 px, also 165 × 165 px bei Offset 7):
+
+| | Eckabstand zur Mitte | |
+|---|---|---|
+| weiße Box 180 × 180 bei (30,30) | 127,3 px | wird beschnitten |
+| QR-Code 165 × 165 bei (37,37) | 117,4 px | passt, **2,6 px Reserve** |
+
+Die Ecken der weißen Fläche fallen also weg — das ist gewollt und harmlos. Der
+QR-Code selbst liegt mit knapp drei Pixeln Luft innerhalb des Kreises. **Wer die
+Box vergrößert oder den Offset verändert, schneidet den Code an** und macht ihn
+unlesbar. Die verbleibende Quiet-Zone beträgt 7 px, also 1,4 Module; die QR-Norm
+empfiehlt 4. In der Praxis lesen Handys das zuverlässig, aber Luft nach unten ist
+keine mehr.
 
 ## Bekannte Einschränkungen
 
