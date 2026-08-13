@@ -199,19 +199,6 @@ unlesbar. Die verbleibende Quiet-Zone beträgt 7 px, also 1,4 Module; die QR-Nor
 empfiehlt 4. In der Praxis lesen Handys das zuverlässig, aber Luft nach unten ist
 keine mehr.
 
-## Wo dieses Repo lebt
-
-Entwickelt wird zu Hause, **Gitea ist das Original**. GitHub ist ein
-automatischer Push-Mirror und dient als öffentlicher Lesezugang:
-
-```
-Gitea   http://interne-adresse/work/esp-qr-display   <- hierhin pushen
-GitHub  https://github.com/ooooli/esp-qr-display       <- Spiegel, folgt von selbst
-```
-
-**Nicht direkt nach GitHub pushen.** Der Mirror synchronisiert bei jedem Push
-und überschreibt, was dort nicht aus Gitea kommt.
-
 ## Was noch offen ist
 
 - **Die Quiet-Zone ist zu klein.** 1,4 Module statt der empfohlenen 4 (siehe
