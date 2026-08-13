@@ -10,9 +10,10 @@
 --             do shell script "osascript /pfad/send_qr.applescript 'https://...'"
 --         end tell
 --
---  Vor dem ersten Lauf ESP_HOST anpassen:
---    - "esp-qr.local"  (mDNS, falls Bonjour/macOS das aufloesen kann)
---    - oder die feste IP, z.B. "192.168.1.42"
+--  ESP_HOST steht auf dem mDNS-Namen und muss normalerweise nicht angepasst
+--  werden. Loest der Router kein mDNS auf, hier die feste IP des Displays
+--  eintragen -- aber KEINE alte IP stehen lassen: hier stand bis 08/2026
+--  "esp-qr.local", und die gehoert im Heimnetz inzwischen der einem anderen Geraet.
 
 property ESP_HOST : "esp-qr.local"
 property ESP_PORT : 80
@@ -47,8 +48,8 @@ on sendURL(theURL)
 	set endpoint to "http://" & ESP_HOST & ":" & ESP_PORT & "/qr"
 	
 	-- HTTP POST, Body als form-urlencoded
-	set curlCmd to "/usr/bin/curl -sS --max-time " & TIMEOUT_SECONDS & Â
-		" -X POST --data-urlencode " & quoted form of ("url=" & theURL) & Â
+	set curlCmd to "/usr/bin/curl -sS --max-time " & TIMEOUT_SECONDS & ï¿½
+		" -X POST --data-urlencode " & quoted form of ("url=" & theURL) & ï¿½
 		" " & quoted form of endpoint
 	
 	try
@@ -69,7 +70,7 @@ on urlEncode(s)
 	repeat with c in (characters of s)
 		set ch to c as text
 		set asc to id of ch
-		if (asc ³ 48 and asc ² 57) or (asc ³ 65 and asc ² 90) or (asc ³ 97 and asc ² 122) or ch is in {"-", "_", ".", "~"} then
+		if (asc ï¿½ 48 and asc ï¿½ 57) or (asc ï¿½ 65 and asc ï¿½ 90) or (asc ï¿½ 97 and asc ï¿½ 122) or ch is in {"-", "_", ".", "~"} then
 			set out to out & ch
 		else
 			set out to out & "%" & (do shell script "printf '%02X' " & asc)

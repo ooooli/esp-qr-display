@@ -10,7 +10,14 @@
 // --- KONFIGURATION ---
 const char* MDNS_HOST     = "esp-qr";
 const int PIN_BL          = 3;
-const unsigned long QR_DURATION_MS = 30000; 
+const unsigned long QR_DURATION_MS = 30000;
+
+// Wiederverbinden mit Backoff: 2s, 4, 8, 16, 32, dann alle 60s. Bewusst KEIN
+// enger Takt -- ein Verbindungsaufbau braucht mit Auth und Assoziation 1-3 s,
+// und wer alle 500 ms neu anfaengt, bricht jeden laufenden Versuch ab und
+// kommt nie ins Netz zurueck.
+#define WIFI_RETRY_START_MS   2000UL
+#define WIFI_RETRY_MAX_MS    60000UL
 
 TFT_eSPI    tft = TFT_eSPI();
 WebServer   server(80);
@@ -19,6 +26,15 @@ Preferences prefs; // Speicher-Objekt
 bool          showingQR    = false;
 unsigned long qrShownAt    = 0;
 String        serialInput  = "";
+
+// WLAN-Zustand. Die Zugangsdaten liegen im RAM, damit der Reconnect sie nicht
+// bei jedem Versuch aus dem NVS holen muss.
+String   wifiSSID          = "";
+String   wifiPass          = "";
+bool     netServicesUp     = false;   // mDNS + HTTP-Server laufen
+uint32_t wifiLostSince     = 0;       // 0 = Verbindung steht
+uint32_t wifiNextTry       = 0;
+uint8_t  wifiTries         = 0;
 
 // --- SPEICHER-FUNKTIONEN ---
 
@@ -68,6 +84,74 @@ void drawQR(const String& url) {
   free(qrcodeData);
 }
 
+// --- NETZ ---
+
+// Statuspunkt am unteren Rand: gelb = versucht, gruen = verbunden, rot = weg.
+void showNetState(uint16_t colour) {
+  tft.fillCircle(120, 235, 2, colour);
+}
+
+// mDNS und HTTP-Server hochziehen. Idempotent, damit der Aufruf aus wifiTick()
+// nach jedem Reconnect gefahrlos ist -- vorher wurden die Dienste NUR beim Boot
+// gestartet, ein spaeter auftauchendes WLAN blieb also ohne HTTP-Server.
+void startNetServices() {
+  if (netServicesUp) return;
+
+  MDNS.begin(MDNS_HOST);
+  server.on("/qr", HTTP_POST, []() {
+    if (server.hasArg("url")) drawQR(server.arg("url"));
+    server.send(200, "text/plain", "OK");
+  });
+  server.begin();
+  netServicesUp = true;
+
+  Serial.print(F("HTTP-Server laeuft. IP: "));
+  Serial.println(WiFi.localIP());
+  Serial.print(F("Host: http://"));
+  Serial.print(MDNS_HOST);
+  Serial.println(F(".local"));
+}
+
+// Wird aus loop() bei jedem Durchlauf aufgerufen und haelt die Verbindung.
+void wifiTick() {
+  if (wifiSSID == "") return;   // ohne Zugangsdaten gibt es nichts zu halten
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifiLostSince != 0) {
+      Serial.printf("[WiFi] wieder verbunden nach %lu s\n",
+                    (unsigned long)((millis() - wifiLostSince) / 1000));
+      wifiLostSince = 0;
+      wifiTries     = 0;
+      showNetState(TFT_GREEN);
+    }
+    startNetServices();
+    return;
+  }
+
+  uint32_t now = millis();
+
+  if (wifiLostSince == 0) {
+    wifiLostSince = now;
+    wifiNextTry   = now;        // erster Versuch sofort
+    wifiTries     = 0;
+    Serial.println(F("[WiFi] Verbindung verloren"));
+    showNetState(TFT_RED);
+  }
+
+  if ((int32_t)(now - wifiNextTry) < 0) return;   // Backoff noch nicht abgelaufen
+
+  uint32_t backoff = WIFI_RETRY_START_MS << (wifiTries < 5 ? wifiTries : 5);
+  if (backoff > WIFI_RETRY_MAX_MS) backoff = WIFI_RETRY_MAX_MS;
+  wifiNextTry = now + backoff;
+  if (wifiTries < 200) wifiTries++;
+
+  Serial.printf("[WiFi] Versuch %u, naechster in %lu s\n",
+                wifiTries, (unsigned long)(backoff / 1000));
+  showNetState(TFT_YELLOW);
+  WiFi.disconnect();
+  WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
+}
+
 // --- SETUP ---
 
 void setup() {
@@ -85,43 +169,42 @@ void setup() {
 
   // WLAN-Daten aus Speicher lesen
   prefs.begin("wifi-store", true);
-  String storedSSID = prefs.getString("ssid", "");
-  String storedPass = prefs.getString("pass", "");
+  wifiSSID = prefs.getString("ssid", "");
+  wifiPass = prefs.getString("pass", "");
   prefs.end();
 
-  if (storedSSID != "") {
+  if (wifiSSID != "") {
     Serial.print(F("Verbinde mit gespeicherten Daten: "));
-    Serial.println(storedSSID);
+    Serial.println(wifiSSID);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(storedSSID.c_str(), storedPass.c_str());
+    WiFi.setAutoReconnect(true);   // erste Verteidigungslinie des Kerns
+    WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
 
-    // Kurzer Verbindungsversuch (10 Sek)
+    // Kurzer Verbindungsversuch (10 Sek). Klappt er nicht, ist das kein
+    // Beinbruch mehr -- wifiTick() in loop() versucht es weiter.
     unsigned long startTry = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTry < 10000) {
       delay(500); Serial.print(".");
-      tft.fillCircle(120, 235, 2, TFT_YELLOW);
+      showNetState(TFT_YELLOW);
     }
+    Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
-      tft.fillCircle(120, 235, 2, TFT_GREEN);
-      Serial.println(WiFi.localIP());
-      MDNS.begin(MDNS_HOST);
-      server.on("/qr", HTTP_POST, [](){
-        if(server.hasArg("url")) drawQR(server.arg("url"));
-        server.send(200, "text/plain", "OK");
-      });
-      server.begin();
+      showNetState(TFT_GREEN);
+      startNetServices();
     } else {
-      tft.fillCircle(120, 235, 2, TFT_RED);
-      Serial.println(F("\nVerbindung fehlgeschlagen. Warte auf USB-Befehle."));
+      showNetState(TFT_RED);
+      Serial.println(F("Noch keine Verbindung. Wird im Hintergrund weiter versucht."));
     }
   } else {
-    Serial.println(F("Keine WLAN-Daten vorhanden. Bitte USB nutzen."));
+    Serial.println(F("Keine WLAN-Daten vorhanden. Per USB setzen: WLAN:SSID,Passwort"));
   }
 }
 
 void loop() {
-  if (WiFi.status() == WL_CONNECTED) server.handleClient();
+  wifiTick();   // haelt die Verbindung, startet Dienste nach dem ersten Connect
+
+  if (netServicesUp && WiFi.status() == WL_CONNECTED) server.handleClient();
 
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
@@ -135,6 +218,13 @@ void loop() {
         String newPass = input.substring(commaIndex + 1);
         saveWiFi(newSSID, newPass);
       }
+    } else if (input.equalsIgnoreCase("logo")) {
+      // Der Mac-Client (QR-Manager) bietet "Zurueck zum Logo" an und sendet
+      // genau dieses Wort. Ohne diesen Zweig wurde daraus ein QR-Code mit dem
+      // Text "logo".
+      showingQR = false;
+      drawLogo();
+      Serial.println(F("Logo."));
     } else if (input.length() > 0) {
       drawQR(input);
     }

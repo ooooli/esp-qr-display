@@ -121,7 +121,13 @@ curl -X POST --data-urlencode 'url=https://example.com' http://esp-qr.local/qr
 ```
 
 Der QR-Code bleibt **30 Sekunden** stehen (`QR_DURATION_MS`), danach kehrt das
-Display zum Logo zurück.
+Display zum Logo zurück. Vorher zurückschalten geht mit dem Wort `logo`:
+
+```bash
+echo 'logo' > /dev/cu.usbmodem101
+```
+
+Das ist auch, was der Menüpunkt „Zurück zum Logo" im QR-Manager sendet.
 
 ### HTTP-API
 
@@ -148,14 +154,30 @@ nicht sichtbar.
 ## Was intern passiert
 
 1. Backlight aus, Display initialisieren, Logo zeichnen, Backlight an.
-2. WLAN-Daten aus dem NVS lesen. Sind welche vorhanden: verbinden, maximal
-   10 Sekunden warten, dann mDNS registrieren und den HTTP-Server auf Port 80
-   starten.
-3. `loop()` bedient parallel den Webserver und die serielle Schnittstelle.
-4. Bei einer URL: schwarzer Grund, weiße Box 180 × 180 bei (30, 30), darin der
+2. WLAN-Daten aus dem NVS lesen. Sind welche vorhanden: verbinden und maximal
+   10 Sekunden warten. Klappt das nicht, ist es kein Beinbruch — `wifiTick()`
+   versucht es im Hintergrund weiter.
+3. Sobald die Verbindung steht (beim Start oder später), werden mDNS und der
+   HTTP-Server auf Port 80 gestartet — einmalig, über `startNetServices()`.
+4. `loop()` ruft `wifiTick()` auf, bedient den Webserver und liest die serielle
+   Schnittstelle.
+5. Bei einer URL: schwarzer Grund, weiße Box 180 × 180 bei (30, 30), darin der
    QR-Code. Die QR-Version wird nach Länge gewählt — Version 4 bis 70 Zeichen,
    darüber Version 9. Sehr lange URLs (> ~200 Zeichen) passen nicht mehr.
-5. Nach 30 Sekunden wieder das Logo.
+6. Nach 30 Sekunden wieder das Logo.
+
+### WLAN wiederverbinden
+
+Bricht die Verbindung weg, versucht `wifiTick()` sie mit **Backoff**
+zurückzuholen: 2 s, 4, 8, 16, 32, danach alle 60 Sekunden. Bewusst kein engerer
+Takt — ein Verbindungsaufbau braucht mit Authentifizierung und Assoziation
+1–3 Sekunden, und wer alle 500 ms neu anfängt, bricht jeden laufenden Versuch ab
+und kommt nie zurück. Zusätzlich ist `WiFi.setAutoReconnect(true)` gesetzt, das
+ist die erste Verteidigungslinie des ESP32-Kerns.
+
+Der Statuspunkt am unteren Rand zeigt den Verlauf mit: **gelb** ein Versuch
+läuft, **grün** verbunden, **rot** Verbindung verloren. Im seriellen Monitor
+steht dazu jeweils eine Zeile mit der Wartezeit bis zum nächsten Versuch.
 
 ### Warum die Maße so knapp sind
 
@@ -190,22 +212,16 @@ GitHub  https://github.com/ooooli/esp-qr-display       <- Spiegel, folgt von sel
 **Nicht direkt nach GitHub pushen.** Der Mirror synchronisiert bei jedem Push
 und überschreibt, was dort nicht aus Gitea kommt.
 
-## Bekannte Einschränkungen
+## Was noch offen ist
 
-Ehrlich dokumentiert, statt später darüber zu stolpern:
-
-- **Kein WLAN-Reconnect.** Verbunden wird nur einmal beim Start, mit 10 Sekunden
-  Geduld. Bricht das WLAN später weg, versucht der Sketch von sich aus nichts —
-  bis zum nächsten Neustart bleibt nur der USB-Weg. Für ein Gerät, das ohnehin
-  meist am Kabel hängt, ist das verkraftbar; wer es dauerhaft im Netz braucht,
-  müsste einen Reconnect mit Backoff nachrüsten.
-- **„Zurück zum Logo" im QR-Manager wirkt nicht.** Das Script sendet `logo`, der
-  Sketch kennt diesen Befehl aber nicht und macht daraus brav einen QR-Code mit
-  dem Text „logo". Entweder im Sketch abfangen oder den Menüpunkt entfernen.
-- **`send_qr.applescript` hat eine feste IP** (`esp-qr.local`), die im aktuellen
-  Heimnetz einem anderen Gerät gehört. Wer den HTTP-Weg nutzen will, sollte dort
-  `esp-qr.local` oder die richtige IP eintragen — oder gleich den USB-Client
-  nehmen.
+- **Die Quiet-Zone ist zu klein.** 1,4 Module statt der empfohlenen 4 (siehe
+  Geometrie oben). Handys lesen das zuverlässig, aber Reserve gibt es keine.
+  Wirklich beheben ließe sich das nur mit einer kleineren QR-Skalierung, was den
+  Code auf dem kleinen Panel schlechter lesbar macht — deshalb bewusst so.
+- **Kein Watchdog.** Hängt der Sketch, hilft nur ein Stromzyklus. Bei einem Gerät
+  am Schreibtisch verkraftbar; für einen festen Einbauort wäre ein
+  `esp_task_wdt` sinnvoll.
 - **Farben invertiert?** In `User_Setup.h` `TFT_INVERSION_ON` einkommentieren.
-- **`esp-qr.local` unerreichbar?** Manche Router blockieren mDNS. Dann die feste
-  IP verwenden und im Router eine DHCP-Reservierung setzen.
+- **`esp-qr.local` unerreichbar?** Manche Router blockieren mDNS. Dann in
+  `mac-client/send_qr.applescript` die feste IP eintragen und im Router eine
+  DHCP-Reservierung setzen.
