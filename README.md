@@ -50,6 +50,24 @@ mac-client/
   send_qr.applescript    aelterer Client, sendet per HTTP an eine feste IP
 ```
 
+## Fertige Firmware flashen
+
+Wer das Display nur benutzen und nichts ändern will, braucht keine Arduino-IDE.
+Unter [Releases](../../releases) liegt ein fertiges Image, das Bootloader,
+Partitionstabelle und Programm in einer Datei enthält:
+
+```bash
+pip3 install esptool
+esptool.py --chip esp32c3 --port /dev/cu.usbmodem101 \
+           write_flash 0x0 esp-qr-display-firmware.bin
+```
+
+Danach das WLAN einrichten (siehe unten) — Zugangsdaten sind **nicht** im Image
+enthalten, sie liegen im NVS des jeweiligen Geräts.
+
+Das Image passt für den **ESP32-2424S012 mit 4 MB Flash**. Für ein eigenes Logo
+oder eigene Änderungen führt kein Weg am Selberbauen vorbei.
+
 ## Einrichten
 
 **Arduino IDE 2.x**, Boardverwalter-URL für ESP32 hinzufügen:
