@@ -12,8 +12,7 @@
 --
 --  ESP_HOST steht auf dem mDNS-Namen und muss normalerweise nicht angepasst
 --  werden. Loest der Router kein mDNS auf, hier die feste IP des Displays
---  eintragen -- aber KEINE alte IP stehen lassen: hier stand bis 08/2026
---  "esp-qr.local", und die gehoert im Heimnetz inzwischen der einem anderen Geraet.
+--  eintragen. Sie steht nach dem Start im seriellen Monitor.
 
 property ESP_HOST : "esp-qr.local"
 property ESP_PORT : 80
